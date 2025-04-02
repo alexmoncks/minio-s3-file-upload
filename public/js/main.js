@@ -7,25 +7,42 @@ const fileList = document.getElementById('fileList');
 const previewModal = document.getElementById('previewModal');
 const previewContent = document.getElementById('previewContent');
 const previewTitle = document.getElementById('previewTitle');
+const searchInput = document.getElementById('searchInput');
+const prevPageBtn = document.getElementById('prevPage');
+const nextPageBtn = document.getElementById('nextPage');
+const pageInfo = document.getElementById('pageInfo');
+
+// State
+let currentPage = 1;
+let currentSearch = '';
+const pageSize = 12;
+
+// Image processing options
+let imageProcessingOptions = {
+    width: 800,
+    height: 600,
+    maintainAspectRatio: true,
+    removeBackground: true
+};
 
 // File type detection
 const imageTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml'];
 const documentTypes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
-const textTypes = ['text/plain', 'text/html', 'text/css', 'text/javascript'];
+const textTypes = ['text/plain', 'text/csv', 'text/html', 'text/css', 'application/javascript'];
 
 // Drag and drop handlers
 dropZone.addEventListener('dragover', (e) => {
     e.preventDefault();
-    dropZone.classList.add('border-blue-500');
+    dropZone.classList.add('dragover');
 });
 
 dropZone.addEventListener('dragleave', () => {
-    dropZone.classList.remove('border-blue-500');
+    dropZone.classList.remove('dragover');
 });
 
 dropZone.addEventListener('drop', (e) => {
     e.preventDefault();
-    dropZone.classList.remove('border-blue-500');
+    dropZone.classList.remove('dragover');
     const files = e.dataTransfer.files;
     handleFiles(files);
 });
@@ -35,18 +52,84 @@ fileInput.addEventListener('change', (e) => {
 });
 
 // File handling
-function handleFiles(files) {
-    Array.from(files).forEach(file => {
-        uploadFile(file);
+async function handleFiles(files) {
+    for (const file of files) {
+        if (imageTypes.includes(file.type)) {
+            showImageProcessingOptions(file);
+        } else {
+            await uploadFile(file);
+        }
+    }
+}
+
+function showImageProcessingOptions(file) {
+    const modal = document.createElement('div');
+    modal.className = 'modal fade';
+    modal.innerHTML = `
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Image Processing Options</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Width</label>
+                        <input type="number" class="form-control" id="imageWidth" value="800">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Height</label>
+                        <input type="number" class="form-control" id="imageHeight" value="600">
+                    </div>
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="maintainAspectRatio" checked>
+                        <label class="form-check-label">Maintain Aspect Ratio</label>
+                    </div>
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="removeBackground" checked>
+                        <label class="form-check-label">Remove Background</label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="processImage">Process & Upload</button>
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    const modalInstance = new bootstrap.Modal(modal);
+    modalInstance.show();
+
+    document.getElementById('processImage').addEventListener('click', async () => {
+        const options = {
+            width: parseInt(document.getElementById('imageWidth').value),
+            height: parseInt(document.getElementById('imageHeight').value),
+            maintainAspectRatio: document.getElementById('maintainAspectRatio').checked,
+            removeBackground: document.getElementById('removeBackground').checked
+        };
+        modalInstance.hide();
+        await uploadFile(file, options);
+    });
+
+    modal.addEventListener('hidden.bs.modal', () => {
+        document.body.removeChild(modal);
     });
 }
 
-async function uploadFile(file) {
+async function uploadFile(file, options = {}) {
     const formData = new FormData();
     formData.append('file', file);
 
-    uploadProgress.classList.remove('hidden');
-    uploadStatus.textContent = '0%';
+    // Add image processing options if provided
+    if (options.width) formData.append('width', options.width);
+    if (options.height) formData.append('height', options.height);
+    if (options.maintainAspectRatio !== undefined) formData.append('maintainAspectRatio', options.maintainAspectRatio);
+    if (options.removeBackground !== undefined) formData.append('removeBackground', options.removeBackground);
+
+    uploadProgress.classList.remove('d-none');
+    uploadStatus.classList.remove('d-none');
+    uploadStatus.textContent = `Uploading ${file.name}...`;
 
     try {
         const response = await fetch('/api/upload', {
@@ -55,173 +138,278 @@ async function uploadFile(file) {
         });
 
         if (!response.ok) {
-            throw new Error('Upload failed');
+            throw new Error(`Upload failed: ${response.statusText}`);
         }
 
         const result = await response.json();
-        showNotification('File uploaded successfully', 'success');
-        loadFileList();
+        uploadStatus.textContent = `Successfully uploaded ${result.fileName}`;
+        uploadProgress.querySelector('.progress-bar').style.width = '100%';
+        
+        // Refresh file list
+        loadFiles();
     } catch (error) {
-        showNotification('Upload failed: ' + error.message, 'error');
-    } finally {
-        uploadProgress.classList.add('hidden');
+        console.error('Upload error:', error);
+        uploadStatus.textContent = `Error uploading ${file.name}: ${error.message}`;
+        uploadProgress.querySelector('.progress-bar').style.width = '0%';
     }
 }
 
-// File listing
-async function loadFileList() {
+// File listing and pagination
+async function loadFiles() {
     try {
-        const response = await fetch('/api/files');
+        const response = await fetch(`/api/files?page=${currentPage}&pageSize=${pageSize}&search=${encodeURIComponent(currentSearch)}`);
         if (!response.ok) {
-            throw new Error('Failed to fetch files');
+            throw new Error(`Failed to load files: ${response.statusText}`);
         }
 
-        const files = await response.json();
-        renderFileList(files);
+        const data = await response.json();
+        displayFiles(data.files);
+        updatePagination(data.pagination);
     } catch (error) {
-        showNotification('Failed to load files: ' + error.message, 'error');
+        console.error('Error loading files:', error);
+        showNotification('Error loading files. Please try again.', 'error');
+        fileList.innerHTML = '<div class="alert alert-danger">Failed to load files. Please try again.</div>';
     }
 }
 
-function renderFileList(files) {
-    fileList.innerHTML = files.map(file => `
-        <tr>
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                <button onclick="previewFile('${file.name}', '${file.type}')" class="text-blue-600 hover:text-blue-900">
-                    ${file.name}
-                </button>
-            </td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${formatFileSize(file.size)}</td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${formatDate(file.lastModified)}</td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                <button onclick="previewFile('${file.name}', '${file.type}')" class="text-green-600 hover:text-green-900 mr-3" title="Preview">
+function displayFiles(files) {
+    fileList.innerHTML = '';
+    
+    if (!files || files.length === 0) {
+        fileList.innerHTML = '<div class="alert alert-info">No files found.</div>';
+        return;
+    }
+    
+    files.forEach(file => {
+        const card = document.createElement('div');
+        card.className = 'file-card';
+        
+        const icon = getFileIcon(file.contentType);
+        const size = formatFileSize(file.size);
+        const date = new Date(file.lastModified).toLocaleString();
+        
+        // Create thumbnail container
+        const thumbnailContainer = document.createElement('div');
+        thumbnailContainer.className = 'file-thumbnail';
+        
+        if (imageTypes.includes(file.contentType)) {
+            const img = document.createElement('img');
+            img.src = `/api/thumbnail/${encodeURIComponent(file.name)}`;
+            img.alt = file.name;
+            img.className = 'img-thumbnail';
+            img.onerror = () => {
+                img.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"><rect width="200" height="200" fill="%23f8f9fa"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="Arial" font-size="24" fill="%236c757d">Image not available</text></svg>';
+            };
+            thumbnailContainer.appendChild(img);
+        } else {
+            thumbnailContainer.innerHTML = `<i class="${icon} fa-2x"></i>`;
+        }
+        
+        card.innerHTML = `
+            <div class="file-icon">
+                <i class="${icon}"></i>
+            </div>
+            <div class="file-name">${file.name}</div>
+            <div class="file-size">${size}</div>
+            <div class="file-date">${date}</div>
+            <div class="file-actions">
+                <button class="btn btn-sm btn-outline-primary" onclick="previewFile('${encodeURIComponent(file.name)}')">
                     <i class="fas fa-eye"></i>
                 </button>
-                <button onclick="downloadFile('${file.name}')" class="text-blue-600 hover:text-blue-900 mr-3" title="Download">
+                <button class="btn btn-sm btn-outline-success" onclick="downloadFile('${encodeURIComponent(file.name)}')">
                     <i class="fas fa-download"></i>
                 </button>
-                <button onclick="deleteFile('${file.name}')" class="text-red-600 hover:text-red-900" title="Delete">
+                <button class="btn btn-sm btn-outline-danger" onclick="deleteFile('${encodeURIComponent(file.name)}')">
                     <i class="fas fa-trash"></i>
                 </button>
-            </td>
-        </tr>
-    `).join('');
+            </div>
+        `;
+        
+        // Insert thumbnail at the beginning of the card
+        card.insertBefore(thumbnailContainer, card.firstChild);
+        fileList.appendChild(card);
+    });
 }
 
-// Preview functionality
-async function previewFile(fileName, fileType) {
+function updatePagination(pagination) {
+    currentPage = pagination.currentPage;
+    const totalPages = pagination.totalPages;
+    
+    prevPageBtn.disabled = currentPage === 1;
+    nextPageBtn.disabled = currentPage === totalPages;
+    pageInfo.textContent = `Page ${currentPage} of ${totalPages}`;
+}
+
+// Search functionality with debounce
+let searchTimeout;
+searchInput.addEventListener('input', (e) => {
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => {
+        currentSearch = e.target.value.trim();
+        currentPage = 1; // Reset to first page on new search
+        loadFiles();
+    }, 500); // Increased debounce time to 500ms
+});
+
+// Pagination controls
+prevPageBtn.addEventListener('click', () => {
+    if (currentPage > 1) {
+        currentPage--;
+        loadFiles();
+    }
+});
+
+nextPageBtn.addEventListener('click', () => {
+    currentPage++;
+    loadFiles();
+});
+
+// File operations
+async function previewFile(fileName) {
     try {
-        const response = await fetch(`/api/preview/${encodeURIComponent(fileName)}`);
-        if (!response.ok) throw new Error('Preview failed');
-        
+        const response = await fetch(`/api/preview/${fileName}`);
+        if (!response.ok) {
+            throw new Error(`Failed to get file: ${response.statusText}`);
+        }
+
         const blob = await response.blob();
-        const url = URL.createObjectURL(blob);
+        const contentType = response.headers.get('content-type');
         
         previewTitle.textContent = fileName;
         previewContent.innerHTML = '';
         
-        if (imageTypes.includes(fileType)) {
-            // Image preview
+        if (imageTypes.includes(contentType)) {
             const img = document.createElement('img');
-            img.src = url;
-            img.className = 'max-w-full h-auto mx-auto';
+            img.src = URL.createObjectURL(blob);
+            img.className = 'img-fluid';
             previewContent.appendChild(img);
-        } else if (documentTypes.includes(fileType)) {
-            // PDF preview
+        } else if (contentType.startsWith('video/')) {
+            const video = document.createElement('video');
+            video.controls = true;
+            video.className = 'w-100';
+            video.src = URL.createObjectURL(blob);
+            previewContent.appendChild(video);
+        } else if (contentType.startsWith('audio/')) {
+            const audio = document.createElement('audio');
+            audio.controls = true;
+            audio.className = 'w-100';
+            audio.src = URL.createObjectURL(blob);
+            previewContent.appendChild(audio);
+        } else if (contentType === 'application/pdf') {
             const iframe = document.createElement('iframe');
-            iframe.src = url;
-            iframe.className = 'w-full h-[80vh]';
+            iframe.src = URL.createObjectURL(blob);
+            iframe.className = 'w-100';
+            iframe.style.height = '80vh';
             previewContent.appendChild(iframe);
-        } else if (textTypes.includes(fileType)) {
-            // Text preview
+        } else {
             const text = await blob.text();
             const pre = document.createElement('pre');
-            pre.className = 'whitespace-pre-wrap font-mono text-sm';
+            pre.className = 'bg-light p-3 rounded';
+            pre.style.maxHeight = '80vh';
+            pre.style.overflow = 'auto';
             pre.textContent = text;
             previewContent.appendChild(pre);
-        } else {
-            // Unsupported file type
-            previewContent.innerHTML = `
-                <div class="text-center py-8">
-                    <i class="fas fa-file-alt text-4xl text-gray-400 mb-4"></i>
-                    <p class="text-gray-600">Preview not available for this file type</p>
-                    <p class="text-sm text-gray-500 mt-2">Please download the file to view it</p>
-                </div>
-            `;
         }
         
-        previewModal.classList.remove('hidden');
-        previewModal.classList.add('flex');
+        previewModal.style.display = 'block';
     } catch (error) {
-        showNotification('Preview failed: ' + error.message, 'error');
+        console.error('Preview error:', error);
+        showNotification('Error previewing file', 'error');
     }
 }
 
-function closePreview() {
-    previewModal.classList.add('hidden');
-    previewModal.classList.remove('flex');
-    previewContent.innerHTML = '';
-}
-
-// Utility functions
-function formatFileSize(bytes) {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-}
-
-function formatDate(dateString) {
-    return new Date(dateString).toLocaleString();
-}
-
-function showNotification(message, type) {
-    const notification = document.createElement('div');
-    notification.className = `fixed top-4 right-4 p-4 rounded-lg ${
-        type === 'success' ? 'bg-green-500' : 'bg-red-500'
-    } text-white`;
-    notification.textContent = message;
-    document.body.appendChild(notification);
-    setTimeout(() => notification.remove(), 3000);
-}
-
-// File actions
 async function downloadFile(fileName) {
     try {
-        const response = await fetch(`/api/download/${encodeURIComponent(fileName)}`);
-        if (!response.ok) throw new Error('Download failed');
-        
+        const response = await fetch(`/api/files/${fileName}`);
+        if (!response.ok) {
+            throw new Error(`Failed to download file: ${response.statusText}`);
+        }
+
         const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
+        const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
         a.download = fileName;
         document.body.appendChild(a);
         a.click();
-        window.URL.revokeObjectURL(url);
-        a.remove();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
     } catch (error) {
-        showNotification('Download failed: ' + error.message, 'error');
+        console.error('Download error:', error);
+        showNotification('Error downloading file', 'error');
     }
 }
 
 async function deleteFile(fileName) {
-    if (!confirm('Are you sure you want to delete this file?')) return;
-    
+    if (!confirm(`Are you sure you want to delete ${fileName}?`)) {
+        return;
+    }
+
     try {
-        const response = await fetch(`/api/delete/${encodeURIComponent(fileName)}`, {
+        const response = await fetch(`/api/delete/${fileName}`, {
             method: 'DELETE'
         });
-        
-        if (!response.ok) throw new Error('Delete failed');
-        
+
+        if (!response.ok) {
+            throw new Error(`Failed to delete file: ${response.statusText}`);
+        }
+
         showNotification('File deleted successfully', 'success');
-        loadFileList();
+        loadFiles();
     } catch (error) {
-        showNotification('Delete failed: ' + error.message, 'error');
+        console.error('Delete error:', error);
+        showNotification('Error deleting file', 'error');
     }
 }
 
+// Utility functions
+function getFileIcon(contentType) {
+    if (imageTypes.includes(contentType)) {
+        return 'fas fa-image';
+    } else if (documentTypes.includes(contentType)) {
+        return 'fas fa-file-alt';
+    } else if (textTypes.includes(contentType)) {
+        return 'fas fa-file-code';
+    } else if (contentType.startsWith('video/')) {
+        return 'fas fa-video';
+    } else if (contentType.startsWith('audio/')) {
+        return 'fas fa-music';
+    } else {
+        return 'fas fa-file';
+    }
+}
+
+function formatFileSize(bytes) {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+function showNotification(message, type = 'info') {
+    const alert = document.createElement('div');
+    alert.className = `alert alert-${type} alert-dismissible fade show`;
+    alert.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    document.querySelector('.container').insertBefore(alert, document.querySelector('.file-grid'));
+    setTimeout(() => alert.remove(), 5000);
+}
+
+// Close preview modal
+document.querySelector('.close-preview').addEventListener('click', () => {
+    previewModal.style.display = 'none';
+    previewContent.innerHTML = '';
+});
+
+window.addEventListener('click', (e) => {
+    if (e.target === previewModal) {
+        previewModal.style.display = 'none';
+        previewContent.innerHTML = '';
+    }
+});
+
 // Initial load
-document.addEventListener('DOMContentLoaded', loadFileList); 
+loadFiles(); 
