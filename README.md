@@ -118,6 +118,14 @@ The system supports various file types including:
 - Video files (MP4, WebM)
 - And many more...
 
+## File Size Limits
+
+The application enforces a maximum file size limit of 50MB for uploads. When attempting to upload a file larger than this limit:
+- A warning notification will be displayed
+- The file will be skipped and not uploaded
+- The notification includes the file name and the size limit
+- The message automatically disappears after 5 seconds
+
 ## Contributing
 
 1. Fork the repository

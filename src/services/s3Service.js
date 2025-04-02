@@ -270,6 +270,42 @@ class S3Service {
         };
         return contentTypes[ext] || 'application/octet-stream';
     }
+
+    async getBucketStats() {
+        try {
+            const objects = await this.minioClient.listObjects(this.bucketName);
+            let totalSize = 0;
+            let fileCount = 0;
+
+            for await (const obj of objects) {
+                totalSize += obj.size;
+                fileCount++;
+            }
+
+            // Get bucket policy to check if there's a size limit
+            let bucketPolicy;
+            try {
+                bucketPolicy = await this.minioClient.getBucketPolicy(this.bucketName);
+            } catch (error) {
+                console.log('No bucket policy found');
+            }
+
+            // Default to 1TB if no policy is set
+            const maxSize = bucketPolicy ? parseInt(bucketPolicy.maxSize) || 1024 * 1024 * 1024 * 1024 : 1024 * 1024 * 1024 * 1024;
+            const remainingSpace = maxSize - totalSize;
+
+            return {
+                totalSize,
+                fileCount,
+                maxSize,
+                remainingSpace,
+                usedPercentage: (totalSize / maxSize) * 100
+            };
+        } catch (error) {
+            console.error('Error getting bucket stats:', error);
+            throw new Error('Failed to get bucket statistics');
+        }
+    }
 }
 
 module.exports = new S3Service(); 

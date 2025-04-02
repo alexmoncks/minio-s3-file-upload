@@ -139,23 +139,31 @@
 </head>
 <body>
     <div class="container py-5">
-        <h1 class="mb-4">S3 File Upload</h1>
+        <h1 class="text-center mb-4">S3 Bucket File Manager</h1>
         
-        <div class="drop-zone mb-4" id="dropZone">
-            <i class="fas fa-cloud-upload-alt fa-3x mb-3"></i>
-            <h4>Drag & Drop files here</h4>
-            <p class="text-muted">or</p>
-            <input type="file" id="fileInput" class="d-none" multiple>
-            <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">
-                Select Files
-            </button>
-        </div>
+        <div class="row">
+            <div class="col-md-8">
+                <div class="drop-zone mb-4" id="dropZone">
+                    <i class="fas fa-cloud-upload-alt fa-3x mb-3"></i>
+                    <h4>Drag & Drop files here</h4>
+                    <p class="text-muted">or</p>
+                    <input type="file" id="fileInput" class="d-none" multiple>
+                    <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">
+                        Select Files
+                    </button>
+                </div>
 
-        <div class="progress mb-3 d-none" id="uploadProgress">
-            <div class="progress-bar" role="progressbar" style="width: 0%"></div>
-        </div>
+                <div class="progress mb-3 d-none" id="uploadProgress">
+                    <div class="progress-bar" role="progressbar" style="width: 0%"></div>
+                </div>
 
-        <div class="alert alert-info d-none" id="uploadStatus"></div>
+                <div class="alert alert-info d-none" id="uploadStatus"></div>
+            </div>
+            
+            <div class="col-md-4">
+                <div id="bucketStats" class="bucket-stats-container"></div>
+            </div>
+        </div>
 
         <div class="search-container">
             <i class="fas fa-search search-icon"></i>

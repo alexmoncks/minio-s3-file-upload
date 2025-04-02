@@ -3,8 +3,11 @@ const cors = require('cors');
 const multer = require('multer');
 const path = require('path');
 require('dotenv').config();
+const mammoth = require('mammoth');
+const XLSX = require('xlsx');
 
 const s3Service = require('./services/s3Service');
+const imageProcessingService = require('./services/imageProcessingService');
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -85,7 +88,25 @@ app.get('/api/preview/:fileName', async (req, res) => {
         // Set appropriate headers
         res.setHeader('Content-Type', fileInfo.contentType);
         
-        // Handle the stream properly
+        // For PDF files, set additional headers
+        if (fileInfo.contentType === 'application/pdf') {
+            res.setHeader('Content-Disposition', 'inline; filename="' + fileName + '"');
+            res.setHeader('X-Content-Type-Options', 'nosniff');
+            res.setHeader('Cache-Control', 'no-cache');
+            
+            // Convert stream to buffer for PDF
+            const chunks = [];
+            for await (const chunk of fileStream) {
+                chunks.push(chunk);
+            }
+            const buffer = Buffer.concat(chunks);
+            
+            // Send the buffer directly
+            res.send(buffer);
+            return;
+        }
+        
+        // Handle the stream properly for other file types
         fileStream.on('error', (error) => {
             console.error('Stream error:', error);
             res.status(500).json({ error: 'Failed to stream file' });
@@ -95,6 +116,52 @@ app.get('/api/preview/:fileName', async (req, res) => {
     } catch (error) {
         console.error('Preview error:', error);
         res.status(500).json({ error: 'Failed to preview file' });
+    }
+});
+
+// New endpoint for Office file preview
+app.get('/api/preview-office/:fileName', async (req, res) => {
+    try {
+        const { fileName } = req.params;
+        const fileStream = await s3Service.getFile(fileName);
+        const fileInfo = await s3Service.getFileInfo(fileName);
+        
+        // Convert stream to buffer
+        const chunks = [];
+        for await (const chunk of fileStream) {
+            chunks.push(chunk);
+        }
+        const buffer = Buffer.concat(chunks);
+        
+        let previewHtml = '';
+        
+        // Handle different Office file types
+        if (fileInfo.contentType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+            // Word document
+            const result = await mammoth.convertToHtml({ buffer });
+            previewHtml = result.value;
+        } else if (fileInfo.contentType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') {
+            // Excel file
+            const workbook = XLSX.read(buffer, { type: 'buffer' });
+            const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+            const jsonData = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+            
+            // Convert to HTML table
+            previewHtml = '<table class="table table-bordered">';
+            jsonData.forEach(row => {
+                previewHtml += '<tr>';
+                row.forEach(cell => {
+                    previewHtml += `<td>${cell || ''}</td>`;
+                });
+                previewHtml += '</tr>';
+            });
+            previewHtml += '</table>';
+        }
+        
+        res.json({ html: previewHtml });
+    } catch (error) {
+        console.error('Office preview error:', error);
+        res.status(500).json({ error: 'Failed to preview Office file' });
     }
 });
 
@@ -164,6 +231,20 @@ app.delete('/api/delete/:fileName', async (req, res) => {
     } catch (error) {
         console.error('Delete error:', error);
         res.status(500).json({ error: 'Failed to delete file' });
+    }
+});
+
+app.get('/api/health', (req, res) => {
+    res.json({ status: 'ok' });
+});
+
+app.get('/api/stats', async (req, res) => {
+    try {
+        const stats = await s3Service.getBucketStats();
+        res.json(stats);
+    } catch (error) {
+        console.error('Error getting bucket stats:', error);
+        res.status(500).json({ error: 'Failed to get bucket statistics' });
     }
 });
 
