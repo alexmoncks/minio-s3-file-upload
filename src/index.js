@@ -17,11 +17,12 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../public')));
 
-// Multer configuration for file upload
+// Configure multer for file uploads
 const upload = multer({
     storage: multer.memoryStorage(),
     limits: {
-        fileSize: 10 * 1024 * 1024 // 10MB limit
+        fileSize: 50 * 1024 * 1024, // 50MB limit
+        files: 1 // Allow only one file at a time
     }
 });
 
