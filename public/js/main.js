@@ -190,61 +190,115 @@ async function loadFiles() {
 }
 
 function displayFiles(files) {
-    fileList.innerHTML = '';
-    
-    if (!files || files.length === 0) {
-        fileList.innerHTML = '<div class="alert alert-info">No files found.</div>';
-        return;
-    }
-    
+    const fileGrid = document.getElementById('fileGrid');
+    fileGrid.innerHTML = '';
+
     files.forEach(file => {
-        const card = document.createElement('div');
-        card.className = 'file-card';
+        const fileCard = document.createElement('div');
+        fileCard.className = 'file-card';
         
-        const icon = getFileIcon(file.contentType);
-        const size = formatFileSize(file.size);
-        const date = new Date(file.lastModified).toLocaleString();
-        
-        // Create thumbnail container
+        // Create thumbnail container with fixed dimensions
         const thumbnailContainer = document.createElement('div');
-        thumbnailContainer.className = 'file-thumbnail';
-        
-        if (imageTypes.includes(file.contentType)) {
+        thumbnailContainer.className = 'thumbnail-container';
+        thumbnailContainer.style.width = '200px';
+        thumbnailContainer.style.height = '200px';
+        thumbnailContainer.style.display = 'flex';
+        thumbnailContainer.style.alignItems = 'center';
+        thumbnailContainer.style.justifyContent = 'center';
+        thumbnailContainer.style.backgroundColor = '#f8f9fa';
+        thumbnailContainer.style.borderRadius = '8px';
+        thumbnailContainer.style.marginBottom = '10px';
+        thumbnailContainer.style.overflow = 'hidden';
+
+        // Create content container
+        const contentContainer = document.createElement('div');
+        contentContainer.className = 'content-container';
+        contentContainer.style.display = 'flex';
+        contentContainer.style.flexDirection = 'column';
+        contentContainer.style.height = '100%';
+        contentContainer.style.justifyContent = 'space-between';
+
+        // Create actions container
+        const actionsContainer = document.createElement('div');
+        actionsContainer.className = 'actions-container';
+        actionsContainer.style.marginTop = 'auto';
+        actionsContainer.style.marginBottom = '5px';
+        actionsContainer.style.display = 'flex';
+        actionsContainer.style.gap = '5px';
+        actionsContainer.style.justifyContent = 'flex-end';
+
+        // Add file icon or thumbnail based on file type
+        if (file.contentType.startsWith('image/')) {
             const img = document.createElement('img');
             img.src = `/api/thumbnail/${encodeURIComponent(file.name)}`;
+            img.className = 'thumbnail';
             img.alt = file.name;
-            img.className = 'img-thumbnail';
-            img.onerror = () => {
-                img.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"><rect width="200" height="200" fill="%23f8f9fa"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="Arial" font-size="24" fill="%236c757d">Image not available</text></svg>';
-            };
             thumbnailContainer.appendChild(img);
         } else {
-            thumbnailContainer.innerHTML = `<i class="${icon} fa-2x"></i>`;
+            // Create document icon based on file type
+            const icon = document.createElement('i');
+            icon.className = 'fas fa-file';
+            
+            // Set specific icon based on file type
+            if (file.contentType === 'application/pdf') {
+                icon.className = 'fas fa-file-pdf';
+            } else if (file.contentType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+                icon.className = 'fas fa-file-word';
+            } else if (file.contentType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') {
+                icon.className = 'fas fa-file-excel';
+            } else if (file.contentType === 'application/vnd.openxmlformats-officedocument.presentationml.presentation') {
+                icon.className = 'fas fa-file-powerpoint';
+            }
+            
+            icon.style.fontSize = '48px';
+            icon.style.color = '#6c757d';
+            thumbnailContainer.appendChild(icon);
         }
-        
-        card.innerHTML = `
-            <div class="file-icon">
-                <i class="${icon}"></i>
-            </div>
-            <div class="file-name">${file.name}</div>
-            <div class="file-size">${size}</div>
-            <div class="file-date">${date}</div>
-            <div class="file-actions">
-                <button class="btn btn-sm btn-outline-primary" onclick="previewFile('${encodeURIComponent(file.name)}')">
-                    <i class="fas fa-eye"></i>
-                </button>
-                <button class="btn btn-sm btn-outline-success" onclick="downloadFile('${encodeURIComponent(file.name)}')">
-                    <i class="fas fa-download"></i>
-                </button>
-                <button class="btn btn-sm btn-outline-danger" onclick="deleteFile('${encodeURIComponent(file.name)}')">
-                    <i class="fas fa-trash"></i>
-                </button>
-            </div>
-        `;
-        
-        // Insert thumbnail at the beginning of the card
-        card.insertBefore(thumbnailContainer, card.firstChild);
-        fileList.appendChild(card);
+
+        // Add file name
+        const fileName = document.createElement('div');
+        fileName.className = 'file-name';
+        fileName.textContent = file.name;
+        fileName.style.marginBottom = '5px';
+        fileName.style.fontWeight = 'bold';
+        fileName.style.wordBreak = 'break-word';
+
+        // Add file size
+        const fileSize = document.createElement('div');
+        fileSize.className = 'file-size';
+        fileSize.textContent = formatFileSize(file.size);
+        fileSize.style.color = '#6c757d';
+        fileSize.style.fontSize = '0.9em';
+        fileSize.style.marginBottom = '5px';
+
+        // Add action buttons
+        const previewBtn = document.createElement('button');
+        previewBtn.className = 'btn btn-sm btn-outline-primary';
+        previewBtn.innerHTML = '<i class="fas fa-eye"></i>';
+        previewBtn.onclick = () => previewFile(file.name);
+
+        const downloadBtn = document.createElement('button');
+        downloadBtn.className = 'btn btn-sm btn-outline-success';
+        downloadBtn.innerHTML = '<i class="fas fa-download"></i>';
+        downloadBtn.onclick = () => downloadFile(file.name);
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'btn btn-sm btn-outline-danger';
+        deleteBtn.innerHTML = '<i class="fas fa-trash"></i>';
+        deleteBtn.onclick = () => deleteFile(file.name);
+
+        // Assemble the card
+        actionsContainer.appendChild(previewBtn);
+        actionsContainer.appendChild(downloadBtn);
+        actionsContainer.appendChild(deleteBtn);
+
+        contentContainer.appendChild(fileName);
+        contentContainer.appendChild(fileSize);
+        contentContainer.appendChild(actionsContainer);
+
+        fileCard.appendChild(thumbnailContainer);
+        fileCard.appendChild(contentContainer);
+        fileGrid.appendChild(fileCard);
     });
 }
 
